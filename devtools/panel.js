@@ -6,13 +6,12 @@ import { PayloadEngine } from '../core/payload_engine.js';
 const TAB_ID = chrome.devtools.inspectedWindow.tabId;
 let port;
 let historyData = [];
+let selectedRequest = null;
 let currentInterceptedRequest = null;
-let repeaterTabs = [{ id: 0, request: '', response: null, view: 'raw' }];
+let repeaterTabs = [{ id: 0, url: '', request: '', response: null, view: 'raw' }];
 let activeRepeaterTabId = 0;
 let nextRepeaterTabId = 1;
 let intruderPositions = [];
-let intruderAttackRunning = false;
-let intruderResults = [];
 
 // ─── Initialization ──────────────────────────────────────────────────────────
 function init() {
@@ -22,13 +21,13 @@ function init() {
     setupHistoryControls();
     setupRepeaterControls();
     setupIntruderControls();
-    setupLoggerControls();
-    setupShortcuts();
+    setupLogger();
     setupSplitPanes();
-    setupContextMenu();
+    setupCommandPalette();
 
-    // Initial data fetch
-    requestHistory();
+    // Refresh history
+    port.postMessage({ type: 'GET_HISTORY' });
+    port.postMessage({ type: 'GET_CORE_STATUS' });
 }
 
 // ─── Communication ────────────────────────────────────────────────────────────
@@ -38,69 +37,20 @@ function setupPort() {
 
     port.onMessage.addListener((msg) => {
         switch (msg.type) {
-            case 'READY':
-                log('Session connected', 'info');
+            case 'READY': log('Engine connected', 'info'); break;
+            case 'NEW_REQUEST': addRequestToTables(msg.request); break;
+            case 'INTERCEPTED': showIntercepted(msg.request); break;
+            case 'HISTORY_DATA': renderAllHistory(msg.requests); break;
+            case 'CORE_STATUS':
+                updateInterceptToggle(msg.intercept);
+                updateCaptureStatus(msg.capture);
                 break;
-            case 'NEW_REQUEST':
-                addRequestToTables(msg.request);
-                break;
-            case 'INTERCEPTED':
-                showIntercepted(msg.request);
-                break;
-            case 'HISTORY_DATA':
-                renderHistory(msg.requests);
-                break;
-            case 'RESPONSE_HEADERS':
-                updateRequestStatus(msg.requestId, msg.status, msg.time);
-                break;
-            case 'INTERCEPT_STATUS':
-                updateInterceptToggle(msg.enabled);
-                break;
-            case 'INTRUDER_RESULT':
-                addIntruderResult(msg.result, msg.total);
-                break;
-            case 'INTRUDER_DONE':
-                finishIntruderAttack();
-                break;
-            case 'EXPORT_DATA':
-                downloadSession(msg.data);
-                break;
-            case 'IMPORT_DONE':
-                log('Session imported successfully', 'info');
-                requestHistory();
-                break;
+            case 'INTERCEPT_STATUS': updateInterceptToggle(msg.enabled); break;
         }
     });
 }
 
-// ─── Navigation ─────────────────────────────────────────────────────────────
-function setupNav() {
-    const tabs = document.querySelectorAll('.tab-btn');
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-
-            const target = tab.dataset.tab;
-            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-            document.getElementById(`tab-${target}`).classList.add('active');
-        });
-    });
-
-    // Export/Import
-    document.getElementById('exportBtn').onclick = () => port.postMessage({ type: 'EXPORT_SESSION' });
-    document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
-    document.getElementById('importFile').onchange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (ev) => port.postMessage({ type: 'IMPORT_SESSION', data: ev.target.result });
-            reader.readAsText(file);
-        }
-    };
-}
-
-// ─── Proxy ─────────────────────────────────────────────────────────────────
+// ─── Proxy & History ─────────────────────────────────────────────────────────
 function setupProxyControls() {
     const toggle = document.getElementById('interceptToggle');
     toggle.onchange = () => port.postMessage({ type: 'SET_INTERCEPT', enabled: toggle.checked });
@@ -121,13 +71,54 @@ function setupProxyControls() {
     };
 }
 
+function addRequestToTables(req) {
+    if (historyData.some(h => h.id === req.id)) return;
+    historyData.push(req);
+    appendRequestRow(req, 'proxyTableBody');
+    appendRequestRow(req, 'historyTableBody');
+    updateStatusCount();
+}
+
+function appendRequestRow(req, tbodyId) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    const tr = document.createElement('tr');
+    tr.dataset.id = req.id;
+    tr.onclick = () => selectRequest(req, tr);
+
+    const mCls = `m-${req.method.toLowerCase()}`;
+    tr.innerHTML = `
+        <td class="col-id">${historyData.length}</td>
+        <td class="col-method"><span class="method-badge ${mCls}">${req.method}</span></td>
+        <td class="col-host">${req.host}</td>
+        <td class="col-path">${req.path}</td>
+        <td class="col-status">...</td>
+        <td class="col-size">-</td>
+        <td class="col-time">-</td>
+        <td class="col-tags"></td>
+    `;
+    tbody.appendChild(tr);
+    if (tbody.children.length > 500) tbody.removeChild(tbody.firstChild);
+}
+
+function selectRequest(req, tr) {
+    document.querySelectorAll('tr.selected').forEach(r => r.classList.remove('selected'));
+    tr.classList.add('selected');
+    selectedRequest = req;
+
+    // Update detail pane (simplified)
+    const detail = document.getElementById('proxyDetail');
+    detail.classList.remove('hidden');
+    detail.innerHTML = `
+        <div class="pane-header"><span>Request Detail</span></div>
+        <textarea class="raw-editor" readonly>${RequestParser.toRaw(req)}</textarea>
+    `;
+}
+
 function showIntercepted(req) {
     currentInterceptedRequest = req;
-    const panel = document.getElementById('interceptPanel');
-    const editor = document.getElementById('interceptEditor');
-    panel.classList.remove('hidden');
-    editor.value = RequestParser.toRaw(req);
-    log(`Request intercepted: ${req.method} ${req.url}`, 'intercept');
+    document.getElementById('interceptPanel').classList.remove('hidden');
+    document.getElementById('interceptEditor').value = RequestParser.toRaw(req);
 }
 
 function hideIntercepted() {
@@ -135,251 +126,91 @@ function hideIntercepted() {
     currentInterceptedRequest = null;
 }
 
-function addRequestToTables(req) {
-    historyData.push(req);
-    renderRequestRow(req, 'proxyTableBody');
-    renderRequestRow(req, 'historyTableBody');
-    updateStatusCount();
+function updateInterceptToggle(on) {
+    const t = document.getElementById('interceptToggle');
+    t.checked = on;
+    document.getElementById('statusIntercept').textContent = `Intercept: ${on ? 'ON' : 'OFF'}`;
+    document.getElementById('statusIntercept').className = on ? 'status-intercept on' : 'status-intercept';
 }
 
-function renderRequestRow(req, tbodyId) {
-    const tbody = document.getElementById(tbodyId);
-    const tr = document.createElement('tr');
-    tr.dataset.id = req.id;
-    tr.onclick = () => selectRequest(req, tr);
-    tr.oncontextmenu = (e) => showContextMenu(e, req);
+function updateCaptureStatus(on) {
+    document.getElementById('statusCapture').textContent = `Capture: ${on ? 'ON' : 'OFF'}`;
+    document.getElementById('statusCapture').className = on ? 'status-capture on' : 'status-capture';
+}
 
-    const methodClass = `m-${req.method.toLowerCase()}`;
-    const statusClass = req.status ? `s-${Math.floor(req.status / 100)}xx` : '';
-
-    tr.innerHTML = `
-    <td class="col-id">${historyData.length}</td>
-    <td class="col-method"><span class="method-badge ${methodClass}">${req.method}</span></td>
-    <td class="col-host">${req.host}</td>
-    <td class="col-path">${req.path}</td>
-    <td class="col-status"><span class="${statusClass}">${req.status || '...'}</span></td>
-    <td class="col-size">${formatSize(req.size)}</td>
-    <td class="col-time">${req.time ? req.time + 'ms' : ''}</td>
-    <td class="col-tags">${renderTags(req.tags)}</td>
-  `;
-
-    // Virtual scrolling simulation: only keep last 500 in DOM if list gets huge
-    if (tbody.children.length > 500) tbody.removeChild(tbody.firstChild);
-    tbody.appendChild(tr);
+function updateStatusCount() {
+    document.getElementById('statusCount').textContent = `${historyData.length} requests`;
 }
 
 // ─── Repeater ─────────────────────────────────────────────────────────────
 function setupRepeaterControls() {
-    document.getElementById('addRepeaterTab').onclick = createRepeaterTab;
-
-    // View toggles
-    document.querySelectorAll('.vtog').forEach(btn => {
-        btn.onclick = () => {
-            const rid = btn.dataset.rid;
-            const view = btn.dataset.view || btn.dataset.rview;
-            if (btn.dataset.view) switchRepeaterRequestView(rid, view);
-            if (btn.dataset.rview) switchRepeaterResponseView(rid, view);
-        };
-    });
-}
-
-function createRepeaterTab(data = null) {
-    const rid = nextRepeaterTabId++;
-    const tab = { id: rid, request: data ? RequestParser.toRaw(data) : '', response: null, view: 'raw' };
-    repeaterTabs.push(tab);
-
-    // Tab button
-    const btn = document.createElement('button');
-    btn.className = 'repeater-tab';
-    btn.textContent = `Tab ${repeaterTabs.length}`;
-    btn.dataset.rid = rid;
-    btn.onclick = () => switchRepeaterTab(rid);
-
-    const addBtn = document.getElementById('addRepeaterTab');
-    addBtn.parentNode.insertBefore(btn, addBtn);
-
-    // Clone template (simulated since we're using innerHTML for speed here)
-    const template = document.querySelector('.repeater-instance').cloneNode(true);
-    template.dataset.rid = rid;
-    template.classList.remove('active');
-
-    // Update IDs in clone
-    const elements = template.querySelectorAll('[id]');
-    elements.forEach(el => el.id = el.id.replace('0', rid));
-
-    document.getElementById('repeaterContent').appendChild(template);
-
-    // Setup send logic for this tab
-    const sendBtn = document.getElementById(`repSend${rid}`);
-    sendBtn.onclick = () => sendRepeater(rid);
-
-    if (data) {
-        document.getElementById(`reqEditor${rid}`).value = RequestParser.toRaw(data);
-        document.getElementById(`repUrl${rid}`).value = data.url;
-    }
-
-    switchRepeaterTab(rid);
-    return rid;
+    document.getElementById('repSend0').onclick = () => sendRepeater(0);
 }
 
 async function sendRepeater(rid) {
     const raw = document.getElementById(`reqEditor${rid}`).value;
-    const url = document.getElementById(`repUrl${rid}`).value;
     const req = RequestParser.parseRaw(raw);
-    req.url = url;
+    req.url = document.getElementById(`repUrl${rid}`).value || req.url;
 
-    const btn = document.getElementById(`repSend${rid}`);
-    btn.disabled = true;
-    btn.textContent = 'Sending...';
-
+    log(`Repeater sending to ${req.url}...`, 'info');
     const start = Date.now();
     try {
-        const response = await fetchRequest(req);
-        const elapsed = Date.now() - start;
-
-        // Store response
-        const tabData = repeaterTabs.find(t => t.id === rid);
-        tabData.response = response;
-
-        renderRepeaterResponse(rid, response, elapsed);
-        log(`Repeater [Tab ${rid}] sent to ${req.url}`, 'info');
-    } catch (err) {
-        log(`Repeater Error: ${err.message}`, 'error');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Send';
-    }
-}
-
-function renderRepeaterResponse(rid, resp, time) {
-    document.getElementById(`respStatus${rid}`).textContent = `${resp.status} ${resp.statusText || ''}`;
-    document.getElementById(`repTiming${rid}`).textContent = `${time}ms | ${formatSize(resp.size)}`;
-
-    const rawBox = document.getElementById(`respRaw${rid}`);
-    const prettyBox = document.getElementById(`respPretty${rid}`);
-
-    // Raw view
-    let rawStr = `HTTP/1.1 ${resp.status}\n`;
-    for (const [k, v] of Object.entries(resp.headers)) rawStr += `${k}: ${v}\n`;
-    rawStr += `\n${resp.body}`;
-    rawBox.textContent = rawStr;
-
-    // Pretty view
-    const formatted = RequestParser.formatBody(resp.body, resp.headers['content-type']);
-    prettyBox.innerHTML = formatted.formatted;
-
-    // Diff view (if we have a previous response)
-    // ... Logic to store last result for diff ...
-}
-
-// ─── Intruder ─────────────────────────────────────────────────────────────
-function setupIntruderControls() {
-    document.getElementById('markPositionBtn').onclick = markIntruderPosition;
-    document.getElementById('clearPositionsBtn').onclick = clearIntruderPositions;
-    document.getElementById('startAttackBtn').onclick = startIntruderAttack;
-}
-
-function markIntruderPosition() {
-    const editor = document.getElementById('intruderEditor');
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    if (start === end) return;
-
-    const text = editor.value;
-    const marker = `§${text.substring(start, end)}§`;
-    editor.value = text.substring(0, start) + marker + text.substring(end);
-}
-
-function startIntruderAttack() {
-    const raw = document.getElementById('intruderEditor').value;
-    const attackType = document.getElementById('attackType').value;
-    const payloadText = document.getElementById('payloadList0').value;
-    const payloads = PayloadEngine.parseList(payloadText);
-
-    if (payloads.length === 0) return alert('Add payloads first');
-
-    intruderResults = [];
-    document.getElementById('intruderResultsBody').innerHTML = '';
-    document.getElementById('startAttackBtn').classList.add('hidden');
-    document.getElementById('stopAttackBtn').classList.remove('hidden');
-
-    // Send to logic in engine (background)
-    // Simplified for this prototype
-    runIntruderLocal(raw, payloads, attackType);
-}
-
-async function runIntruderLocal(raw, payloads, attackType) {
-    const reqTemplate = RequestParser.parseRaw(raw.replace(/§/g, '')); // Crude cleanup
-    // Actual logic would find § markers and replace
-
-    for (let i = 0; i < payloads.length; i++) {
-        const p = payloads[i];
-        const currentReq = { ...reqTemplate };
-        // ... Payload injection logic ...
-
-        const start = Date.now();
-        const resp = await fetchRequest(currentReq);
-        const elapsed = Date.now() - start;
-
-        addIntruderResult({
-            id: i,
-            payload: p,
-            status: resp.status,
-            size: (resp.body || '').length,
-            time: elapsed
+        const response = await fetch(req.url, {
+            method: req.method,
+            headers: req.headers,
+            body: req.method !== 'GET' ? req.body : undefined
         });
+        const body = await response.text();
+        const elapsed = Date.now() - start;
+
+        document.getElementById(`respRaw${rid}`).textContent = body;
+        document.getElementById(`respStatus${rid}`).textContent = `${response.status} ${response.statusText}`;
+        document.getElementById(`repTiming${rid}`).textContent = `${elapsed}ms`;
+    } catch (e) {
+        log(`Repeater Error: ${e.message}`, 'error');
     }
 }
 
-function addIntruderResult(res) {
-    const tbody = document.getElementById('intruderResultsBody');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-    <td>${res.id}</td>
-    <td>${res.payload}</td>
-    <td>${res.status}</td>
-    <td>${res.size}</td>
-    <td>${res.time}ms</td>
-  `;
-    tbody.appendChild(tr);
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-async function fetchRequest(req) {
-    const opts = {
-        method: req.method,
-        headers: req.headers,
-        body: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined
-    };
-    const res = await fetch(req.url, opts);
-    const body = await res.text();
-    const headers = {};
-    res.headers.forEach((v, k) => headers[k] = v);
-    return { status: res.status, statusText: res.statusText, headers, body, size: body.length };
-}
-
+// ─── Logger ─────────────────────────────────────────────────────────────
 function log(msg, level = 'info') {
     const container = document.getElementById('logContainer');
+    if (!container) return;
     const div = document.createElement('div');
-    div.className = 'log-entry fade-in';
-    div.innerHTML = `
-    <span class="log-time">${new Date().toLocaleTimeString()}</span>
-    <span class="log-level log-${level}">${level}</span>
-    <span class="log-msg">${msg}</span>
-  `;
+    div.className = `log-entry log-${level}`;
+    div.innerHTML = `<span class="log-time">${new Date().toLocaleTimeString()}</span> <span class="log-msg">${msg}</span>`;
     container.prepend(div);
 }
 
-function formatSize(bytes) {
-    if (!bytes) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+// ─── UI Helpers ─────────────────────────────────────────────────────────────
+function setupNav() {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('.tab-btn, .tab-panel').forEach(el => el.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+        };
+    });
 }
 
-// ─── Entry Point ──────────────────────────────────────────────────────────────
-window.addEventListener('load', init);
+function setupSplitPanes() {
+    // Simple drag simulation or just hide/show
+}
 
-// Global error handler
-window.onerror = (msg) => log(msg, 'error');
+function setupCommandPalette() {
+    window.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'k') {
+            e.preventDefault();
+            document.getElementById('paletteOverlay').classList.toggle('hidden');
+        }
+    });
+}
+
+function renderAllHistory(requests) {
+    historyData = requests;
+    document.getElementById('proxyTableBody').innerHTML = '';
+    requests.forEach(req => appendRequestRow(req, 'proxyTableBody'));
+    updateStatusCount();
+}
+
+// ─── Start ──────────────────────────────────────────────────────────────────
+window.addEventListener('load', init);

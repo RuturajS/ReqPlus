@@ -1,13 +1,26 @@
+// ReqPlus Popup Script
+
+function updateStatus() {
+    chrome.runtime.sendMessage({ type: 'GET_CORE_STATUS' }, (resp) => {
+        if (chrome.runtime.lastError) {
+            console.warn("Background not ready yet:", chrome.runtime.lastError.message);
+            return;
+        }
+        if (resp) {
+            const statusEl = document.getElementById('interceptStatus');
+            statusEl.textContent = resp.intercept ? 'ON' : 'OFF';
+            statusEl.className = resp.intercept ? 'status-2xx' : '';
+        }
+    });
+}
+
 document.getElementById('openDevTools').onclick = () => {
-    chrome.tabs.create({ url: 'chrome://extensions/?id=' + chrome.runtime.id });
-    // In reality, user just opens DevTools, but we can hint them
+    // Opening the panel normally requires F12, but we can open a helpful page or just close
+    alert("Please open DevTools (F12) and select the 'ReqPlus' tab to use the toolkit.");
     window.close();
 };
 
-// Update status from background
-chrome.runtime.sendMessage({ type: 'GET_CORE_STATUS' }, (resp) => {
-    if (resp) {
-        document.getElementById('interceptStatus').textContent = resp.intercept ? 'ON' : 'OFF';
-        document.getElementById('interceptStatus').className = resp.intercept ? 's-2xx' : '';
-    }
-});
+// Initial update
+updateStatus();
+// Poll for updates while popup is open
+setInterval(updateStatus, 1000);
