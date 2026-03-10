@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="../styles/minimal.css">
+    <style>
+        body {
+            width: 300px;
+            height: auto;
+            padding: 15px;
+        }
+
+        .status-card {
+            background: var(--bg-1);
+            border: 1px solid var(--border);
+            padding: 12px;
+            border-radius: 4px;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 11px;
+        }
+
+        .hint {
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-top: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="status-card">
+        <div class="status-row">
+            <span>ReqPlus Engine</span>
+            <span class="status-2xx">ACTIVE</span>
+        </div>
+        <div class="status-row">
+            <span>Interception</span>
+            <span id="interceptStatus">OFF</span>
+        </div>
+        <button class="btn-primary" style="width: 100%; margin-top: 10px;" id="openDevTools">Open DevTools
+            Panel</button>
+    </div>
+    <p class="hint">Use F12 or Right Click > Inspect to open the full toolkit.</p>
+    <script src="popup.js"></script>
+</body>
+
+</html>
