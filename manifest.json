@@ -16,7 +16,8 @@
         "<all_urls>"
     ],
     "background": {
-        "service_worker": "background/proxy_engine.js"
+        "service_worker": "background/proxy_engine.js",
+        "type": "module"
     },
     "devtools_page": "devtools/devtools.html",
     "action": {
