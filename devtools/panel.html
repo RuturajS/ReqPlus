@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReqPlus – Security Toolkit</title>
+    <link rel="stylesheet" href="../styles/minimal.css">
+</head>
+
+<body>
+
+    <!-- ═══════════════════════════════════════════════════════════════ TOOLBAR ══ -->
+    <header class="toolbar">
+        <div class="toolbar-brand">
+            <span class="brand-icon">⬡</span>
+            <span class="brand-name">ReqPlus</span>
+            <span class="brand-version">v1.0</span>
+        </div>
+
+        <nav class="tab-bar" id="tabBar">
+            <button class="tab-btn active" data-tab="proxy">Proxy</button>
+            <button class="tab-btn" data-tab="history">History</button>
+            <button class="tab-btn" data-tab="repeater">Repeater</button>
+            <button class="tab-btn" data-tab="intruder">Intruder</button>
+            <button class="tab-btn" data-tab="logger">Logger</button>
+            <button class="tab-btn" data-tab="settings">Settings</button>
+        </nav>
+
+        <div class="toolbar-actions">
+            <button class="icon-btn" id="cmdPaletteBtn" title="Command Palette (Ctrl+K)">⌘</button>
+            <button class="icon-btn" id="exportBtn" title="Export Session">↑</button>
+            <button class="icon-btn" id="importBtn" title="Import Session">↓</button>
+            <input type="file" id="importFile" accept=".json" style="display:none">
+        </div>
+    </header>
+
+    <!-- ═══════════════════════════════════════════════════════════════ COMMAND PALETTE ══ -->
+    <div class="palette-overlay hidden" id="paletteOverlay">
+        <div class="palette-box">
+            <input type="text" class="palette-input" id="paletteInput" placeholder="Type a command…">
+            <div class="palette-results" id="paletteResults"></div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ TABS ══ -->
+    <main class="tabs-container">
+
+        <!-- ──────────────────────────────── PROXY TAB ──────────────────────────── -->
+        <section class="tab-panel active" id="tab-proxy">
+            <div class="proxy-controls">
+                <label class="toggle-label">
+                    <input type="checkbox" id="interceptToggle">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-text">Intercept</span>
+                </label>
+                <label class="toggle-label">
+                    <input type="checkbox" id="captureToggle" checked>
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-text">Capture</span>
+                </label>
+                <div class="filter-bar">
+                    <input type="text" class="filter-input" id="proxyFilter" placeholder="Filter requests…">
+                    <select class="filter-select" id="proxyMethodFilter">
+                        <option value="">All Methods</option>
+                        <option>GET</option>
+                        <option>POST</option>
+                        <option>PUT</option>
+                        <option>DELETE</option>
+                        <option>PATCH</option>
+                        <option>OPTIONS</option>
+                    </select>
+                </div>
+                <button class="btn-ghost" id="clearProxyBtn">Clear</button>
+            </div>
+
+            <!-- Intercepted request editor -->
+            <div class="intercept-panel hidden" id="interceptPanel">
+                <div class="intercept-header">
+                    <span class="intercept-badge">⏸ INTERCEPTED</span>
+                    <div class="intercept-actions">
+                        <button class="btn-primary" id="forwardBtn">Forward</button>
+                        <button class="btn-danger" id="dropBtn">Drop</button>
+                        <button class="btn-ghost" id="sendToRepeaterFromProxy">→ Repeater</button>
+                    </div>
+                </div>
+                <div class="raw-editor-wrap">
+                    <textarea class="raw-editor" id="interceptEditor" spellcheck="false"></textarea>
+                </div>
+            </div>
+
+            <!-- Request list + detail split -->
+            <div class="split-pane" id="proxySplit">
+                <div class="pane pane-left">
+                    <table class="req-table" id="proxyTable">
+                        <thead>
+                            <tr>
+                                <th class="col-id">#</th>
+                                <th class="col-method">Method</th>
+                                <th class="col-host">Host</th>
+                                <th class="col-path">Path</th>
+                                <th class="col-status">Status</th>
+                                <th class="col-size">Size</th>
+                                <th class="col-time">Time</th>
+                                <th class="col-tags">Tags</th>
+                            </tr>
+                        </thead>
+                        <tbody id="proxyTableBody" class="virtual-list"></tbody>
+                    </table>
+                </div>
+                <div class="pane-divider" id="proxyDivider"></div>
+                <div class="pane pane-right hidden" id="proxyDetail">
+                    <!-- filled by JS -->
+                </div>
+            </div>
+        </section>
+
+        <!-- ──────────────────────────────── HISTORY TAB ──────────────────────────── -->
+        <section class="tab-panel" id="tab-history">
+            <div class="history-controls">
+                <div class="filter-bar">
+                    <input type="text" class="filter-input" id="historySearch" placeholder="Search requests…">
+                    <select class="filter-select" id="historyMethod">
+                        <option value="">All Methods</option>
+                        <option>GET</option>
+                        <option>POST</option>
+                        <option>PUT</option>
+                        <option>DELETE</option>
+                        <option>PATCH</option>
+                        <option>OPTIONS</option>
+                    </select>
+                    <input type="text" class="filter-input" id="historyStatus" placeholder="Status (e.g. 200, 4xx)">
+                    <input type="text" class="filter-input" id="historyDomain" placeholder="Domain filter…">
+                </div>
+                <div class="history-actions">
+                    <button class="btn-ghost" id="clearHistoryBtn">Clear All</button>
+                    <button class="btn-ghost" id="deleteSelectedBtn">Delete Selected</button>
+                </div>
+            </div>
+
+            <div class="split-pane" id="historySplit">
+                <div class="pane pane-left">
+                    <table class="req-table" id="historyTable">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="selectAllHistory"></th>
+                                <th class="col-method">Method</th>
+                                <th class="col-host">Host</th>
+                                <th class="col-path">Path</th>
+                                <th class="col-status">Status</th>
+                                <th class="col-size">Size</th>
+                                <th class="col-time">Time</th>
+                                <th class="col-tags">Tags</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody" class="virtual-list"></tbody>
+                    </table>
+                </div>
+                <div class="pane-divider" id="historyDivider"></div>
+                <div class="pane pane-right hidden" id="historyDetail"></div>
+            </div>
+        </section>
+
+        <!-- ──────────────────────────────── REPEATER TAB ──────────────────────────── -->
+        <section class="tab-panel" id="tab-repeater">
+            <div class="repeater-layout">
+                <div class="repeater-tabs">
+                    <div class="repeater-tab-bar" id="repeaterTabBar">
+                        <button class="repeater-tab active" data-rid="0">Tab 1</button>
+                        <button class="repeater-add-tab" id="addRepeaterTab">+</button>
+                    </div>
+                </div>
+
+                <div class="repeater-content" id="repeaterContent">
+                    <div class="repeater-instance active" data-rid="0">
+                        <div class="rep-controls">
+                            <input class="rep-url" id="repUrl0" type="text"
+                                placeholder="https://example.com/api/endpoint">
+                            <button class="btn-primary" id="repSend0">Send</button>
+                            <button class="btn-ghost" id="repRepeat0" title="Repeat (Ctrl+R)">↺ Repeat</button>
+                            <button class="btn-ghost" id="repClear0">Clear</button>
+                            <span class="rep-timing" id="repTiming0"></span>
+                        </div>
+
+                        <div class="rep-split">
+                            <div class="rep-pane">
+                                <div class="pane-header">
+                                    <span>Request</span>
+                                    <div class="view-toggle">
+                                        <button class="vtog active" data-view="raw"
+                                            data-target="reqEditor0">Raw</button>
+                                        <button class="vtog" data-view="structured"
+                                            data-target="reqEditor0">Structured</button>
+                                    </div>
+                                </div>
+                                <div class="editor-container">
+                                    <textarea class="raw-editor" id="reqEditor0" spellcheck="false"
+                                        placeholder="GET / HTTP/1.1&#10;Host: example.com&#10;&#10;"></textarea>
+                                    <div class="structured-editor hidden" id="reqStructured0">
+                                        <div class="struct-section">
+                                            <label>Method</label>
+                                            <select class="struct-method" id="repMethod0">
+                                                <option>GET</option>
+                                                <option>POST</option>
+                                                <option>PUT</option>
+                                                <option>DELETE</option>
+                                                <option>PATCH</option>
+                                                <option>HEAD</option>
+                                                <option>OPTIONS</option>
+                                            </select>
+                                        </div>
+                                        <div class="struct-section">
+                                            <label>Headers</label>
+                                            <div class="kv-editor" id="repHeaders0"></div>
+                                            <button class="btn-ghost btn-sm" data-add-kv="repHeaders0">+ Header</button>
+                                        </div>
+                                        <div class="struct-section">
+                                            <label>Body</label>
+                                            <textarea class="raw-editor short" id="repBody0"
+                                                spellcheck="false"></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rep-pane">
+                                <div class="pane-header">
+                                    <span>Response</span>
+                                    <div class="view-toggle">
+                                        <button class="vtog active" data-rview="raw" data-rid="0">Raw</button>
+                                        <button class="vtog" data-rview="pretty" data-rid="0">Pretty</button>
+                                        <button class="vtog" data-rview="diff" data-rid="0">Diff</button>
+                                    </div>
+                                    <span class="resp-status" id="respStatus0"></span>
+                                </div>
+                                <div class="resp-container">
+                                    <div class="resp-raw" id="respRaw0"></div>
+                                    <div class="resp-pretty hidden" id="respPretty0"></div>
+                                    <div class="resp-diff hidden" id="respDiff0"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ──────────────────────────────── INTRUDER TAB ──────────────────────────── -->
+        <section class="tab-panel" id="tab-intruder">
+            <div class="intruder-layout">
+                <div class="intruder-left">
+                    <div class="section-header">Target Request</div>
+                    <div class="attack-controls">
+                        <div class="attack-type-row">
+                            <label>Attack Type:</label>
+                            <select id="attackType">
+                                <option value="sniper">Sniper</option>
+                                <option value="battering_ram">Battering Ram</option>
+                                <option value="pitchfork">Pitchfork</option>
+                                <option value="cluster_bomb">Cluster Bomb</option>
+                            </select>
+                        </div>
+                        <div class="position-hint">Select text in editor below and click <kbd>Mark §</kbd> to add
+                            position markers.</div>
+                        <div class="editor-toolbar">
+                            <button class="btn-ghost btn-sm" id="markPositionBtn">Mark §</button>
+                            <button class="btn-ghost btn-sm" id="clearPositionsBtn">Clear §</button>
+                        </div>
+                    </div>
+                    <textarea class="raw-editor intruder-editor" id="intruderEditor" spellcheck="false"
+                        placeholder="Paste request here or send from History…"></textarea>
+
+                    <div class="payload-sets" id="payloadSets">
+                        <div class="section-header">Payload Sets</div>
+                        <div class="payload-set" id="payloadSet0">
+                            <div class="payload-set-header">
+                                <span class="payload-set-label">Set 1</span>
+                                <select class="payload-type-sel" id="payloadType0">
+                                    <option value="list">Simple List</option>
+                                    <option value="numeric">Numeric Range</option>
+                                    <option value="builtin">Built-in List</option>
+                                </select>
+                                <select class="builtin-sel hidden" id="builtinSel0"></select>
+                            </div>
+                            <textarea class="payload-list" id="payloadList0" spellcheck="false"
+                                placeholder="One payload per line…"></textarea>
+                            <div class="payload-count" id="payloadCount0">0 payloads</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="intruder-right">
+                    <div class="section-header">
+                        <span>Results</span>
+                        <div class="intruder-actions">
+                            <button class="btn-primary" id="startAttackBtn">▶ Start Attack</button>
+                            <button class="btn-danger hidden" id="stopAttackBtn">■ Stop</button>
+                            <span class="attack-progress" id="attackProgress"></span>
+                        </div>
+                    </div>
+
+                    <div class="intruder-filter-bar">
+                        <input type="text" class="filter-input" id="intruderFilter" placeholder="Filter results…">
+                        <label>
+                            <input type="checkbox" id="filterErrors"> Errors only
+                        </label>
+                        <label>
+                            Min length: <input type="number" class="filter-num" id="filterMinLen">
+                        </label>
+                        <label>
+                            Max length: <input type="number" class="filter-num" id="filterMaxLen">
+                        </label>
+                    </div>
+
+                    <table class="req-table" id="intruderResults">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Payload</th>
+                                <th>Status</th>
+                                <th>Length</th>
+                                <th>Time (ms)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="intruderResultsBody"></tbody>
+                    </table>
+
+                    <div class="intruder-detail hidden" id="intruderDetail">
+                        <div class="pane-header">
+                            <span>Result Detail</span>
+                            <button class="btn-ghost btn-sm" id="closeIntruderDetail">✕</button>
+                        </div>
+                        <div class="resp-raw" id="intruderDetailBody"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ──────────────────────────────── LOGGER TAB ──────────────────────────── -->
+        <section class="tab-panel" id="tab-logger">
+            <div class="logger-controls">
+                <div class="filter-bar">
+                    <input type="text" class="filter-input" id="loggerFilter" placeholder="Filter logs…">
+                    <select class="filter-select" id="loggerLevel">
+                        <option value="">All</option>
+                        <option value="info">Info</option>
+                        <option value="warn">Warn</option>
+                        <option value="error">Error</option>
+                        <option value="intercept">Intercept</option>
+                        <option value="repeater">Repeater</option>
+                        <option value="intruder">Intruder</option>
+                    </select>
+                </div>
+                <button class="btn-ghost" id="clearLogBtn">Clear Logs</button>
+            </div>
+            <div class="log-container" id="logContainer"></div>
+        </section>
+
+        <!-- ──────────────────────────────── SETTINGS TAB ──────────────────────────── -->
+        <section class="tab-panel" id="tab-settings">
+            <div class="settings-layout">
+                <div class="settings-group">
+                    <h3>Capture Settings</h3>
+                    <label class="setting-row">
+                        <span>Maximum history entries</span>
+                        <input type="number" id="setMaxHistory" value="5000" min="100" max="50000">
+                    </label>
+                    <label class="setting-row">
+                        <span>Filter out resource requests (images, fonts, CSS)</span>
+                        <input type="checkbox" id="setFilterResources" checked>
+                    </label>
+                    <label class="setting-row">
+                        <span>Filter out extension requests</span>
+                        <input type="checkbox" id="setFilterExtensions" checked>
+                    </label>
+                    <label class="setting-row">
+                        <span>Domain whitelist (comma-separated, empty = all)</span>
+                        <input type="text" id="setDomainWhitelist" placeholder="example.com, api.example.com">
+                    </label>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Intercept Scope</h3>
+                    <label class="setting-row">
+                        <span>Only intercept POST requests</span>
+                        <input type="checkbox" id="setInterceptPost">
+                    </label>
+                    <label class="setting-row">
+                        <span>Only intercept in-scope domains</span>
+                        <input type="checkbox" id="setInterceptScope">
+                    </label>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Repeater Defaults</h3>
+                    <label class="setting-row">
+                        <span>Follow redirects</span>
+                        <input type="checkbox" id="setFollowRedirects" checked>
+                    </label>
+                    <label class="setting-row">
+                        <span>Repeat delay (ms)</span>
+                        <input type="number" id="setRepeatDelay" value="0" min="0">
+                    </label>
+                </div>
+
+                <div class="settings-group">
+                    <h3>Keyboard Shortcuts</h3>
+                    <div class="shortcut-list">
+                        <div class="shortcut-row"><kbd>Ctrl+Enter</kbd><span>Send request (Repeater)</span></div>
+                        <div class="shortcut-row"><kbd>Ctrl+R</kbd><span>Repeat last request</span></div>
+                        <div class="shortcut-row"><kbd>Ctrl+I</kbd><span>Send to Intruder</span></div>
+                        <div class="shortcut-row"><kbd>Ctrl+K</kbd><span>Open Command Palette</span></div>
+                        <div class="shortcut-row"><kbd>Ctrl+L</kbd><span>Clear History</span></div>
+                        <div class="shortcut-row"><kbd>Ctrl+S</kbd><span>Export Session</span></div>
+                    </div>
+                </div>
+
+                <div class="settings-group">
+                    <h3>About</h3>
+                    <div class="about-text">
+                        <p><strong>ReqPlus v1.0</strong> – Lightweight Browser Security Toolkit</p>
+                        <p>Inspired by Burp Suite. Built with Vanilla JS + Manifest V3.</p>
+                        <p>Pure black & white. Zero external dependencies.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ═══════════════════════════════════════════════════════════════ CONTEXT MENU ══ -->
+    <div class="ctx-menu hidden" id="ctxMenu">
+        <button class="ctx-item" data-action="send-repeater">→ Send to Repeater</button>
+        <button class="ctx-item" data-action="send-intruder">⚡ Send to Intruder</button>
+        <button class="ctx-item" data-action="copy-url">Copy URL</button>
+        <button class="ctx-item" data-action="copy-curl">Copy as cURL</button>
+        <button class="ctx-item" data-action="add-tag">Add Tag…</button>
+        <hr class="ctx-divider">
+        <button class="ctx-item ctx-danger" data-action="delete">Delete</button>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ TAG DIALOG ══ -->
+    <div class="dialog-overlay hidden" id="tagDialogOverlay">
+        <div class="dialog-box">
+            <h4>Add Tag</h4>
+            <input type="text" class="dialog-input" id="tagInput" placeholder="Tag name…">
+            <div class="tag-color-row" id="tagColorRow">
+                <button class="tag-color-btn" data-color="red" title="Red">●</button>
+                <button class="tag-color-btn" data-color="orange" title="Orange">●</button>
+                <button class="tag-color-btn" data-color="yellow" title="Yellow">●</button>
+                <button class="tag-color-btn" data-color="green" title="Green">●</button>
+                <button class="tag-color-btn" data-color="blue" title="Blue">●</button>
+                <button class="tag-color-btn" data-color="purple" title="Purple">●</button>
+            </div>
+            <div class="dialog-actions">
+                <button class="btn-primary" id="tagConfirm">Add</button>
+                <button class="btn-ghost" id="tagCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ STATUS BAR ══ -->
+    <footer class="statusbar">
+        <span class="status-intercept" id="statusIntercept">Intercept: OFF</span>
+        <span class="status-capture" id="statusCapture">Capture: ON</span>
+        <span class="status-count" id="statusCount">0 requests</span>
+        <span class="status-msg" id="statusMsg"></span>
+    </footer>
+
+    <script src="panel.js" type="module"></script>
+</body>
+
+</html>
