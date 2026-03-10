@@ -20,7 +20,6 @@
 
         <nav class="tab-bar" id="tabBar">
             <button class="tab-btn active" data-tab="proxy">Proxy</button>
-            <button class="tab-btn" data-tab="history">History</button>
             <button class="tab-btn" data-tab="repeater">Repeater</button>
             <button class="tab-btn" data-tab="intruder">Intruder</button>
             <button class="tab-btn" data-tab="logger">Logger</button>
@@ -115,51 +114,6 @@
             </div>
         </section>
 
-        <!-- ──────────────────────────────── HISTORY TAB ──────────────────────────── -->
-        <section class="tab-panel" id="tab-history">
-            <div class="history-controls">
-                <div class="filter-bar">
-                    <input type="text" class="filter-input" id="historySearch" placeholder="Search requests…">
-                    <select class="filter-select" id="historyMethod">
-                        <option value="">All Methods</option>
-                        <option>GET</option>
-                        <option>POST</option>
-                        <option>PUT</option>
-                        <option>DELETE</option>
-                        <option>PATCH</option>
-                        <option>OPTIONS</option>
-                    </select>
-                    <input type="text" class="filter-input" id="historyStatus" placeholder="Status (e.g. 200, 4xx)">
-                    <input type="text" class="filter-input" id="historyDomain" placeholder="Domain filter…">
-                </div>
-                <div class="history-actions">
-                    <button class="btn-ghost" id="clearHistoryBtn">Clear All</button>
-                    <button class="btn-ghost" id="deleteSelectedBtn">Delete Selected</button>
-                </div>
-            </div>
-
-            <div class="split-pane" id="historySplit">
-                <div class="pane pane-left">
-                    <table class="req-table" id="historyTable">
-                        <thead>
-                            <tr>
-                                <th><input type="checkbox" id="selectAllHistory"></th>
-                                <th class="col-method">Method</th>
-                                <th class="col-host">Host</th>
-                                <th class="col-path">Path</th>
-                                <th class="col-status">Status</th>
-                                <th class="col-size">Size</th>
-                                <th class="col-time">Time</th>
-                                <th class="col-tags">Tags</th>
-                            </tr>
-                        </thead>
-                        <tbody id="historyTableBody" class="virtual-list"></tbody>
-                    </table>
-                </div>
-                <div class="pane-divider" id="historyDivider"></div>
-                <div class="pane pane-right hidden" id="historyDetail"></div>
-            </div>
-        </section>
 
         <!-- ──────────────────────────────── REPEATER TAB ──────────────────────────── -->
         <section class="tab-panel" id="tab-repeater">
