@@ -102,14 +102,14 @@ function handlePanelMessage(msg, port) {
 // ─── Broadcast to all connected panels ───────────────────────────────────────
 function broadcastAll(msg) {
   for (const port of panelPorts.values()) {
-    try { port.postMessage(msg); } catch (_) {}
+    try { port.postMessage(msg); } catch (_) { }
   }
 }
 
 function broadcastToTab(tabId, msg) {
   const port = panelPorts.get(tabId);
   if (port) {
-    try { port.postMessage(msg); } catch (_) {}
+    try { port.postMessage(msg); } catch (_) { }
   } else {
     // broadcast to all if no specific tab
     broadcastAll(msg);
@@ -120,8 +120,8 @@ function broadcastToTab(tabId, msg) {
 // We use declarativeNetRequest for blocking + webRequest for observation
 chrome.webRequest.onBeforeRequest.addListener(
   (details) => {
-    if (!captureEnabled) return {};
-    if (isInternalRequest(details)) return {};
+    if (!captureEnabled) return;
+    if (isInternalRequest(details)) return;
 
     const requestId = details.requestId;
     const entry = buildRequestEntry(details);
@@ -134,27 +134,21 @@ chrome.webRequest.onBeforeRequest.addListener(
     // Broadcast new request to all panels
     broadcastAll({ type: 'NEW_REQUEST', request: entry });
 
-    // If intercept is ON, pause the request
+    // Note: Manual interception (blocking/modifying) is limited in MV3.
+    // For a full "Pause/Forward" experience, one would typically use the Debugger API.
+    // For now, we capture and log everything correctly.
     if (interceptEnabled) {
-      return new Promise((resolve) => {
-        interceptQueue.set(requestId, {
-          resolve: (mods) => resolve(mods.cancel ? { cancel: true } : {}),
-          entry
-        });
-        broadcastAll({ type: 'INTERCEPTED', request: entry });
-      });
+      broadcastAll({ type: 'INTERCEPTED_LOG', request: entry });
     }
-
-    return {};
   },
   { urls: ['<all_urls>'] },
-  ['requestBody', 'blocking']
+  ['requestBody']
 );
 
 chrome.webRequest.onBeforeSendHeaders.addListener(
   (details) => {
-    if (!captureEnabled) return {};
-    if (isInternalRequest(details)) return {};
+    if (!captureEnabled) return;
+    if (isInternalRequest(details)) return;
 
     const stored = SessionStore.getById(details.requestId);
     if (stored) {
@@ -167,16 +161,15 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
         headers: details.requestHeaders
       });
     }
-    return {};
   },
   { urls: ['<all_urls>'] },
-  ['requestHeaders', 'blocking']
+  ['requestHeaders']
 );
 
 chrome.webRequest.onHeadersReceived.addListener(
   (details) => {
-    if (!captureEnabled) return {};
-    if (isInternalRequest(details)) return {};
+    if (!captureEnabled) return;
+    if (isInternalRequest(details)) return;
 
     const start = pendingResponses.get(details.requestId);
     const elapsed = start ? Date.now() - start : 0;
@@ -196,11 +189,9 @@ chrome.webRequest.onHeadersReceived.addListener(
       responseHeaders: details.responseHeaders,
       time: elapsed
     });
-
-    return {};
   },
   { urls: ['<all_urls>'] },
-  ['responseHeaders', 'blocking']
+  ['responseHeaders']
 );
 
 chrome.webRequest.onCompleted.addListener(
@@ -373,7 +364,7 @@ function buildRequestEntry(details) {
         const bytes = details.requestBody.raw.map(b => b.bytes);
         const merged = new Uint8Array(bytes.reduce((a, b) => [...a, ...new Uint8Array(b)], []));
         bodyStr = new TextDecoder().decode(merged);
-      } catch (_) {}
+      } catch (_) { }
     } else if (details.requestBody.formData) {
       bodyStr = new URLSearchParams(details.requestBody.formData).toString();
     }
